@@ -1,0 +1,96 @@
+pipeline {
+    agent any
+
+    environment {
+        APP_NAME = 'jenkins-demo-app'
+        APP_VERSION = "1.0.${BUILD_NUMBER}"
+        DOCKER_IMAGE = "YOUR_DOCKERHUB_USERNAME/${APP_NAME}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo "Checking out code..."
+                echo "Building: ${APP_NAME} version: ${APP_VERSION}"
+            }
+        }
+
+        stage('Test') {
+            agent {
+                docker {
+                    image 'node:18-alpine'
+                    reuseNode true
+                }
+            }
+            steps {
+                echo "Running tests..."
+                sh 'node app.test.js'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                echo "Building Docker image..."
+                sh "docker build -t ${DOCKER_IMAGE}:${APP_VERSION} ."
+                sh "docker tag ${DOCKER_IMAGE}:${APP_VERSION} ${DOCKER_IMAGE}:latest"
+                echo "Image built: ${DOCKER_IMAGE}:${APP_VERSION}"
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )
+                ]) {
+                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                    sh "docker push ${DOCKER_IMAGE}:${APP_VERSION}"
+                    sh "docker push ${DOCKER_IMAGE}:latest"
+                    echo "Image pushed successfully"
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                echo "Deploying ${APP_NAME}:${APP_VERSION}..."
+                sh "docker stop ${APP_NAME} || true"
+                sh "docker rm ${APP_NAME} || true"
+                sh """
+                    docker run -d \
+                        --name ${APP_NAME} \
+                        -p 3000:3000 \
+                        -e APP_VERSION=${APP_VERSION} \
+                        ${DOCKER_IMAGE}:${APP_VERSION}
+                """
+                echo "Deployed successfully on port 3000"
+            }
+        }
+
+        stage('Verify') {
+            steps {
+                sh 'sleep 3'
+                sh 'curl -s http://localhost:3000/health'
+                echo "Application is healthy"
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "PIPELINE PASSED"
+            echo "${APP_NAME}:${APP_VERSION} is live on port 3000"
+        }
+        failure {
+            echo "PIPELINE FAILED"
+            echo "Check console output for details"
+        }
+        always {
+            echo "Cleaning up..."
+            sh 'docker logout || true'
+        }
+    }
+}
