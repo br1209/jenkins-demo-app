@@ -4,7 +4,7 @@ pipeline {
     environment {
         APP_NAME = 'jenkins-demo-app'
         APP_VERSION = "1.0.${BUILD_NUMBER}"
-        DOCKER_IMAGE = "YOUR_DOCKERHUB_USERNAME/${APP_NAME}"
+        DOCKER_IMAGE = "bhargava209/${APP_NAME}"
     }
 
     stages {
