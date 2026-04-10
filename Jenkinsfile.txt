@@ -1,17 +1,17 @@
 pipeline {
-    agent any
+    agent none
 
     environment {
         APP_NAME = 'jenkins-demo-app'
-        APP_VERSION = "1.0.${BUILD_NUMBER}"
-        DOCKER_IMAGE = "bhargava209/${APP_NAME}"
+        VERSION  = "1.0.${BUILD_NUMBER}"
     }
 
     stages {
         stage('Checkout') {
+            agent any
             steps {
-                echo "Checking out code..."
-                echo "Building: ${APP_NAME} version: ${APP_VERSION}"
+                echo "Branch: ${env.BRANCH_NAME}"
+                echo "Building: ${APP_NAME} version: ${VERSION}"
             }
         }
 
@@ -23,74 +23,73 @@ pipeline {
                 }
             }
             steps {
-                echo "Running tests..."
+                echo "Running tests on branch: ${env.BRANCH_NAME}"
                 sh 'node app.test.js'
             }
         }
 
         stage('Build Docker Image') {
+            agent any
             steps {
                 echo "Building Docker image..."
-                sh "docker build -t ${DOCKER_IMAGE}:${APP_VERSION} ."
-                sh "docker tag ${DOCKER_IMAGE}:${APP_VERSION} ${DOCKER_IMAGE}:latest"
-                echo "Image built: ${DOCKER_IMAGE}:${APP_VERSION}"
+                sh "docker build -t ${APP_NAME}:${VERSION} ."
+                echo "Image built: ${APP_NAME}:${VERSION}"
             }
         }
 
-        stage('Push to Docker Hub') {
+        stage('Deploy to Production') {
+            when {
+                branch 'main'
+            }
+            agent any
             steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'dockerhub-creds',
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS'
-                    )
-                ]) {
-                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
-                    sh "docker push ${DOCKER_IMAGE}:${APP_VERSION}"
-                    sh "docker push ${DOCKER_IMAGE}:latest"
-                    echo "Image pushed successfully"
-                }
+                echo "DEPLOYING TO PRODUCTION"
+                echo "Branch: ${env.BRANCH_NAME}"
+                sh "docker stop ${APP_NAME}-prod || true"
+                sh "docker rm ${APP_NAME}-prod || true"
+                sh "docker run -d --name ${APP_NAME}-prod -p 3000:3000 -e APP_VERSION=${VERSION} -e ENVIRONMENT=production ${APP_NAME}:${VERSION}"
+                echo "Production deployment complete on port 3000"
             }
         }
 
-        stage('Deploy') {
+        stage('Deploy to Staging') {
+            when {
+                branch 'develop'
+            }
+            agent any
             steps {
-                echo "Deploying ${APP_NAME}:${APP_VERSION}..."
-                sh "docker stop ${APP_NAME} || true"
-                sh "docker rm ${APP_NAME} || true"
-                sh """
-                    docker run -d \
-                        --name ${APP_NAME} \
-                        -p 3000:3000 \
-                        -e APP_VERSION=${APP_VERSION} \
-                        ${DOCKER_IMAGE}:${APP_VERSION}
-                """
-                echo "Deployed successfully on port 3000"
+                echo "DEPLOYING TO STAGING"
+                echo "Branch: ${env.BRANCH_NAME}"
+                sh "docker stop ${APP_NAME}-staging || true"
+                sh "docker rm ${APP_NAME}-staging || true"
+                sh "docker run -d --name ${APP_NAME}-staging -p 3001:3000 -e APP_VERSION=${VERSION} -e ENVIRONMENT=staging ${APP_NAME}:${VERSION}"
+                echo "Staging deployment complete on port 3001"
             }
         }
 
-        stage('Verify') {
+        stage('Feature Branch') {
+            when {
+                not { branch 'main' }
+                not { branch 'develop' }
+            }
+            agent any
             steps {
-                sh 'sleep 3'
-                sh 'curl -s http://localhost:3000/health'
-                echo "Application is healthy"
+                echo "FEATURE BRANCH: ${env.BRANCH_NAME}"
+                echo "Tests passed - no deployment for feature branches"
+                echo "Merge to develop when ready"
             }
         }
     }
 
     post {
         success {
-            echo "PIPELINE PASSED"
-            echo "${APP_NAME}:${APP_VERSION} is live on port 3000"
+            echo "PIPELINE PASSED on branch: ${env.BRANCH_NAME}"
         }
         failure {
-            echo "PIPELINE FAILED"
-            echo "Check console output for details"
+            echo "PIPELINE FAILED on branch: ${env.BRANCH_NAME}"
         }
         always {
-            echo "Cleaning up..."
-            sh 'docker logout || true'
+            echo "Finished pipeline for: ${env.BRANCH_NAME}"
         }
     }
 }
