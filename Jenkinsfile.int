@@ -1,109 +1,18 @@
-pipeline {
-    agent none
-
-    parameters {
-        string(
-            name: 'IMAGE_TAG',
-            defaultValue: '',
-            description: 'Docker image tag from branch build'
-        )
-        string(
-            name: 'BRANCH_BUILD_NUMBER',
-            defaultValue: '',
-            description: 'Branch build number'
-        )
-    }
-
-    environment {
-        APP_NAME = 'jenkins-demo-app'
-        INT_PORT = '3001'
-    }
-
-    stages {
-        stage('Pull Image') {
-            agent any
-            steps {
-                echo "INT Pipeline started"
-                echo "Testing image: ${params.IMAGE_TAG}"
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'dockerhub-creds',
-                        usernameVariable: 'USER',
-                        passwordVariable: 'PASS'
-                    )
-                ]) {
-                    sh "echo $PASS | docker login -u $USER --password-stdin"
-                    sh "docker pull ${params.IMAGE_TAG}"
-                    sh "docker logout"
-                }
-                echo "Image pulled successfully"
-            }
-        }
-
-        stage('Deploy to INT') {
-            agent any
-            steps {
-                echo "Deploying to INT environment..."
-                sh "docker stop ${APP_NAME}-int || true"
-                sh "docker rm ${APP_NAME}-int || true"
-                sh """
-                    docker run -d \
-                        --name ${APP_NAME}-int \
-                        -p ${INT_PORT}:3000 \
-                        -e ENVIRONMENT=int \
-                        ${params.IMAGE_TAG}
-                """
-                sh 'sleep 3'
-                echo "Deployed to INT on port ${INT_PORT}"
-            }
-        }
-
-        stage('Integration Tests') {
-            agent any
-            steps {
-                echo "Running integration tests against INT..."
-                sh "docker exec ${APP_NAME}-int node -e \"require('http').get('http://localhost:3000/health', r => { console.log('Status:', r.statusCode); process.exit(r.statusCode === 200 ? 0 : 1) })\""
-                echo "Integration tests PASSED"
-            }
-        }
-
-        stage('Tag as INT Passed') {
-            agent any
-            steps {
-                echo "Tagging image as INT passed..."
-                sh "docker tag ${params.IMAGE_TAG} ${APP_NAME}:int-passed-${params.BRANCH_BUILD_NUMBER}"
-                echo "Tagged: ${APP_NAME}:int-passed-${params.BRANCH_BUILD_NUMBER}"
-            }
-        }
-
-        stage('Trigger PP') {
-            agent any
-            steps {
-                echo "INT passed. Triggering PP pipeline..."
-                build job: 'myapp-pp',
-                      parameters: [
-                          string(name: 'IMAGE_TAG',
-                                 value: "${params.IMAGE_TAG}"),
-                          string(name: 'BRANCH_BUILD_NUMBER',
-                                 value: "${params.BRANCH_BUILD_NUMBER}")
-                      ],
-                      wait: true,
-                      propagate: true
-            }
-        }
-    }
-
-    post {
+post {
         success {
             echo "INT PASSED: ${params.IMAGE_TAG}"
         }
         failure {
-            echo "INT FAILED: ${params.IMAGE_TAG}"
-            sh "docker stop ${APP_NAME}-int || true"
-            sh "docker rm ${APP_NAME}-int || true"
+            node('built-in') {
+                echo "INT FAILED: ${params.IMAGE_TAG}"
+                sh "docker stop ${APP_NAME}-int || true"
+                sh "docker rm ${APP_NAME}-int || true"
+            }
         }
         always {
-            cleanWs()
+            node('built-in') {
+                sh "docker stop ${APP_NAME}-int || true"
+                sh "docker rm ${APP_NAME}-int || true"
+            }
         }
     }
-}
