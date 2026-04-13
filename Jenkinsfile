@@ -2,8 +2,9 @@ pipeline {
     agent none
 
     environment {
-        APP_NAME = 'jenkins-demo-app'
-        VERSION  = "1.0.${BUILD_NUMBER}"
+        APP_NAME  = 'jenkins-demo-app'
+        VERSION   = "1.0.${BUILD_NUMBER}"
+        IMAGE_TAG = "bhargava209/${APP_NAME}:branch-${BUILD_NUMBER}"
     }
 
     stages {
@@ -11,11 +12,11 @@ pipeline {
             agent any
             steps {
                 echo "Branch: ${env.BRANCH_NAME}"
-                echo "Building: ${APP_NAME} version: ${VERSION}"
+                echo "Building: ${IMAGE_TAG}"
             }
         }
 
-        stage('Test') {
+        stage('Unit Test') {
             agent {
                 docker {
                     image 'node:18-alpine'
@@ -23,73 +24,71 @@ pipeline {
                 }
             }
             steps {
-                echo "Running tests on branch: ${env.BRANCH_NAME}"
+                echo "Running unit tests..."
                 sh 'node app.test.js'
+                echo "Unit tests passed"
             }
         }
 
         stage('Build Docker Image') {
             agent any
             steps {
-                echo "Building Docker image..."
-                sh "docker build -t ${APP_NAME}:${VERSION} ."
-                echo "Image built: ${APP_NAME}:${VERSION}"
+                echo "Building image: ${IMAGE_TAG}"
+                sh "docker build -t ${IMAGE_TAG} ."
+                echo "Image built successfully"
             }
         }
 
-        stage('Deploy to Production') {
-            when {
-                branch 'main'
-            }
+        stage('Push to Registry') {
             agent any
-            steps {
-                echo "DEPLOYING TO PRODUCTION"
-                echo "Branch: ${env.BRANCH_NAME}"
-                sh "docker stop ${APP_NAME}-prod || true"
-                sh "docker rm ${APP_NAME}-prod || true"
-                sh "docker run -d --name ${APP_NAME}-prod -p 3000:3000 -e APP_VERSION=${VERSION} -e ENVIRONMENT=production ${APP_NAME}:${VERSION}"
-                echo "Production deployment complete on port 3000"
-            }
-        }
-
-        stage('Deploy to Staging') {
             when {
                 branch 'develop'
             }
-            agent any
             steps {
-                echo "DEPLOYING TO STAGING"
-                echo "Branch: ${env.BRANCH_NAME}"
-                sh "docker stop ${APP_NAME}-staging || true"
-                sh "docker rm ${APP_NAME}-staging || true"
-                sh "docker run -d --name ${APP_NAME}-staging -p 3001:3000 -e APP_VERSION=${VERSION} -e ENVIRONMENT=staging ${APP_NAME}:${VERSION}"
-                echo "Staging deployment complete on port 3001"
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'USER',
+                        passwordVariable: 'PASS'
+                    )
+                ]) {
+                    sh "echo $PASS | docker login -u $USER --password-stdin"
+                    sh "docker push ${IMAGE_TAG}"
+                    sh "docker logout"
+                    echo "Image pushed: ${IMAGE_TAG}"
+                }
             }
         }
 
-        stage('Feature Branch') {
-            when {
-                not { branch 'main' }
-                not { branch 'develop' }
-            }
+        stage('Trigger INT') {
             agent any
+            when {
+                branch 'develop'
+            }
             steps {
-                echo "FEATURE BRANCH: ${env.BRANCH_NAME}"
-                echo "Tests passed - no deployment for feature branches"
-                echo "Merge to develop when ready"
+                echo "Branch build passed. Triggering INT pipeline..."
+                build job: 'myapp-int',
+                      parameters: [
+                          string(name: 'IMAGE_TAG',
+                                 value: "${IMAGE_TAG}"),
+                          string(name: 'BRANCH_BUILD_NUMBER',
+                                 value: "${BUILD_NUMBER}")
+                      ],
+                      wait: true,
+                      propagate: true
             }
         }
     }
 
     post {
         success {
-            echo "PIPELINE PASSED on branch: ${env.BRANCH_NAME}"
+            echo "BRANCH BUILD PASSED: ${IMAGE_TAG}"
         }
         failure {
-            echo "PIPELINE FAILED on branch: ${env.BRANCH_NAME}"
+            echo "BRANCH BUILD FAILED: ${IMAGE_TAG}"
         }
         always {
-            echo "Finished pipeline for: ${env.BRANCH_NAME}"
+            cleanWs()
         }
     }
 }
