@@ -88,7 +88,8 @@ pipeline {
             echo "BRANCH BUILD FAILED: ${IMAGE_TAG}"
         }
         always {
-            cleanWs()
+            node('built-in') {
+                cleanWs()
+            }
         }
     }
-}
