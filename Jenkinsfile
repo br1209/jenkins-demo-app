@@ -45,13 +45,11 @@ pipeline {
                 branch 'develop'
             }
             steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'dockerhub-creds',
-                        usernameVariable: 'USER',
-                        passwordVariable: 'PASS'
-                    )
-                ]) {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'USER',
+                    passwordVariable: 'PASS'
+                )]) {
                     sh "echo $PASS | docker login -u $USER --password-stdin"
                     sh "docker push ${IMAGE_TAG}"
                     sh "docker logout"
@@ -69,10 +67,8 @@ pipeline {
                 echo "Branch build passed. Triggering INT pipeline..."
                 build job: 'myapp-int',
                       parameters: [
-                          string(name: 'IMAGE_TAG',
-                                 value: "${IMAGE_TAG}"),
-                          string(name: 'BRANCH_BUILD_NUMBER',
-                                 value: "${BUILD_NUMBER}")
+                          string(name: 'IMAGE_TAG', value: "${IMAGE_TAG}"),
+                          string(name: 'BRANCH_BUILD_NUMBER', value: "${BUILD_NUMBER}")
                       ],
                       wait: true,
                       propagate: true
@@ -93,3 +89,4 @@ pipeline {
             }
         }
     }
+}
