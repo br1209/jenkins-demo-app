@@ -110,17 +110,17 @@ pipeline {
         success {
             echo "PP PASSED"
             echo "Release image ready: bhargava209/${APP_NAME}:${RELEASE_TAG}"
-            echo "Ready for production deployment"
         }
         failure {
-            echo "PP FAILED: ${params.IMAGE_TAG}"
-            sh "docker stop ${APP_NAME}-pp || true"
-            sh "docker rm ${APP_NAME}-pp || true"
+            node('built-in') {
+                sh "docker stop jenkins-demo-app-pp || true"
+                sh "docker rm jenkins-demo-app-pp || true"
+            }
         }
         always {
-            sh "docker stop ${APP_NAME}-pp || true"
-            sh "docker rm ${APP_NAME}-pp || true"
-            cleanWs()
+            node('built-in') {
+                sh "docker stop jenkins-demo-app-pp || true"
+                sh "docker rm jenkins-demo-app-pp || true"
+            }
         }
     }
-}
