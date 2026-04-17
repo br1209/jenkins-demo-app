@@ -2,16 +2,8 @@ pipeline {
     agent none
 
     parameters {
-        string(
-            name: 'IMAGE_TAG',
-            defaultValue: '',
-            description: 'Docker image tag from branch build'
-        )
-        string(
-            name: 'BRANCH_BUILD_NUMBER',
-            defaultValue: '',
-            description: 'Branch build number'
-        )
+        string(name: 'IMAGE_TAG', defaultValue: '', description: 'Docker image tag')
+        string(name: 'BRANCH_BUILD_NUMBER', defaultValue: '', description: 'Branch build number')
     }
 
     environment {
@@ -26,13 +18,11 @@ pipeline {
             steps {
                 echo "PP Pipeline started"
                 echo "Testing image: ${params.IMAGE_TAG}"
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'dockerhub-creds',
-                        usernameVariable: 'USER',
-                        passwordVariable: 'PASS'
-                    )
-                ]) {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'USER',
+                    passwordVariable: 'PASS'
+                )]) {
                     sh "echo $PASS | docker login -u $USER --password-stdin"
                     sh "docker pull ${params.IMAGE_TAG}"
                     sh "docker logout"
@@ -47,13 +37,7 @@ pipeline {
                 echo "Deploying to PP environment..."
                 sh "docker stop ${APP_NAME}-pp || true"
                 sh "docker rm ${APP_NAME}-pp || true"
-                sh """
-                    docker run -d \
-                        --name ${APP_NAME}-pp \
-                        -p ${PP_PORT}:3000 \
-                        -e ENVIRONMENT=pp \
-                        ${params.IMAGE_TAG}
-                """
+                sh "docker run -d --name ${APP_NAME}-pp -p ${PP_PORT}:3000 -e ENVIRONMENT=pp ${params.IMAGE_TAG}"
                 sh 'sleep 3'
                 echo "Deployed to PP on port ${PP_PORT}"
             }
@@ -89,13 +73,11 @@ pipeline {
                 echo "All tests passed!"
                 echo "Tagging as release: ${RELEASE_TAG}"
                 sh "docker tag ${params.IMAGE_TAG} bhargava209/${APP_NAME}:${RELEASE_TAG}"
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'dockerhub-creds',
-                        usernameVariable: 'USER',
-                        passwordVariable: 'PASS'
-                    )
-                ]) {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'USER',
+                    passwordVariable: 'PASS'
+                )]) {
                     sh "echo $PASS | docker login -u $USER --password-stdin"
                     sh "docker push bhargava209/${APP_NAME}:${RELEASE_TAG}"
                     sh "docker logout"
@@ -124,3 +106,4 @@ pipeline {
             }
         }
     }
+}
