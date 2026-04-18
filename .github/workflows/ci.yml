@@ -1,0 +1,27 @@
+name:  CI Pipeline
+
+on:
+  push:
+    branches: [main , develop]
+  pull_request:
+    branches: [mail]
+jobs:
+  test:
+    runs-on:  ubuntu-latest
+    
+    steps:
+      - name:  checkout
+        uses:  actions/checkout@v3
+    
+      - name: setup node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Run tests
+        run: node app.test.js
+
+      - name: Show build info
+        run: |
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Run number: ${{ github.run_number }}"
